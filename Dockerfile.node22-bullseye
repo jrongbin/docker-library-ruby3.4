@@ -1,0 +1,64 @@
+FROM ruby:3.4-bullseye
+
+ENV LC_ALL=en_US.UTF-8
+
+RUN set -ex \
+    && apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        apt-transport-https \
+        supervisor \
+        openssh-server \
+        cron \
+        locales \
+        net-tools \
+        dnsutils \
+        rsync \
+        screen \
+        curl \
+        wget \
+        gnupg \
+        vim \
+        git-core \
+        logrotate \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen \
+    && update-locale LANG=en_US.UTF-8 LANGUAGE=en_US:en:
+
+RUN mkdir -p /var/log/supervisor \
+    && echo '[supervisord]\nnodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf \
+    && echo '[program:cron]\ncommand=/usr/sbin/cron -f' >> /etc/supervisor/conf.d/cron.conf \
+    && mkdir -p /var/run/sshd \
+    && echo '[program:sshd]\ncommand=/usr/sbin/sshd -D' >> /etc/supervisor/conf.d/sshd.conf
+
+RUN wget -O - https://openresty.org/package/pubkey.gpg | apt-key add - \
+    && codename=$(grep -Po 'VERSION="[0-9]+ \(\K[^)]+' /etc/os-release) \
+    && if [ "$(uname -m)" = "x86_64" ] || [ "$(uname -m)" = "amd64" ]; then \
+         echo "deb http://openresty.org/package/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
+       elif [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then \
+         echo "deb http://openresty.org/package/arm64/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
+       else \
+         echo "Unsupported architecture"; \
+         exit 1; \
+       fi \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends openresty \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo '[program:openresty]\ncommand=/usr/bin/openresty -g "daemon off;"' >> /etc/supervisor/conf.d/openresty.conf
+
+RUN curl -sL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+EXPOSE 22 80
+
+CMD ["sh", "-c", "env >> /etc/environment ; /usr/bin/supervisord"]
