@@ -1,7 +1,11 @@
 FROM ruby:3.4-bullseye
 
+# Environment variables
 ENV LC_ALL=en_US.UTF-8
+ENV NODE_VERSION=22.x
+ENV OPENRESTY_REPO_BASE=http://openresty.org/package
 
+# Install system dependencies and tools
 RUN set -ex \
     && apt-get update \
     && apt-get upgrade -y \
@@ -25,24 +29,28 @@ RUN set -ex \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure locale
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
     && update-locale LANG=en_US.UTF-8 LANGUAGE=en_US:en:
 
+# Setup supervisor and services
 RUN mkdir -p /var/log/supervisor \
     && echo '[supervisord]\nnodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf \
     && echo '[program:cron]\ncommand=/usr/sbin/cron -f' >> /etc/supervisor/conf.d/cron.conf \
     && mkdir -p /var/run/sshd \
     && echo '[program:sshd]\ncommand=/usr/sbin/sshd -D' >> /etc/supervisor/conf.d/sshd.conf
 
+# Install OpenResty with multi-architecture support
 RUN wget -O - https://openresty.org/package/pubkey.gpg | apt-key add - \
     && codename=$(grep -Po 'VERSION="[0-9]+ \(\K[^)]+' /etc/os-release) \
-    && if [ "$(uname -m)" = "x86_64" ] || [ "$(uname -m)" = "amd64" ]; then \
-         echo "deb http://openresty.org/package/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
-       elif [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then \
-         echo "deb http://openresty.org/package/arm64/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
+    && arch=$(uname -m) \
+    && if [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ]; then \
+         echo "deb ${OPENRESTY_REPO_BASE}/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
+       elif [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
+         echo "deb ${OPENRESTY_REPO_BASE}/arm64/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
        else \
-         echo "Unsupported architecture"; \
+         echo "Unsupported architecture: $arch"; \
          exit 1; \
        fi \
     && apt-get update \
@@ -51,7 +59,8 @@ RUN wget -O - https://openresty.org/package/pubkey.gpg | apt-key add - \
     && rm -rf /var/lib/apt/lists/* \
     && echo '[program:openresty]\ncommand=/usr/bin/openresty -g "daemon off;"' >> /etc/supervisor/conf.d/openresty.conf
 
-RUN curl -sL https://deb.nodesource.com/setup_22.x | bash - \
+# Install Node.js
+RUN curl -sL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
