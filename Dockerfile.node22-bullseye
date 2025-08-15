@@ -66,6 +66,14 @@ RUN curl -sL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Yarn
+RUN set -ex \
+  && curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/yarn-keyring.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/yarn-keyring.gpg] https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
+  && apt-get update \
+  && apt-get install --no-install-recommends -y yarn \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt
 
 EXPOSE 22 80
