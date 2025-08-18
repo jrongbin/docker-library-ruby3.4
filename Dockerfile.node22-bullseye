@@ -16,6 +16,7 @@ RUN set -ex \
         openssh-server \
         cron \
         locales \
+        iputils-ping \
         net-tools \
         dnsutils \
         rsync \
