@@ -1,20 +1,20 @@
 FROM ruby:3.4-bullseye
 
+# Build arguments for multi-arch support
+ARG TARGETARCH
+
 # Environment variables
 ENV LC_ALL=en_US.UTF-8
 ENV NODE_VERSION=22.x
-ENV OPENRESTY_REPO_BASE=http://openresty.org/package
+ENV S6_OVERLAY_VERSION=3.1.6.2
 
-# Install system dependencies and tools
+# Install base system dependencies
 RUN set -ex \
     && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         apt-transport-https \
-        supervisor \
-        openssh-server \
-        cron \
         locales \
         iputils-ping \
         net-tools \
@@ -35,30 +35,60 @@ RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
     && update-locale LANG=en_US.UTF-8 LANGUAGE=en_US:en:
 
-# Setup supervisor and services
-RUN mkdir -p /var/log/supervisor \
-    && echo '[supervisord]\nnodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf \
-    && echo '[program:cron]\ncommand=/usr/sbin/cron -f' >> /etc/supervisor/conf.d/cron.conf \
-    && mkdir -p /var/run/sshd \
-    && echo '[program:sshd]\ncommand=/usr/sbin/sshd -D' >> /etc/supervisor/conf.d/sshd.conf
+# Install s6-overlay
+RUN case "${TARGETARCH}" in \
+        amd64) S6_ARCH="x86_64" ;; \
+        arm64) S6_ARCH="aarch64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    esac \
+    && wget -O /tmp/s6-overlay-noarch.tar.xz https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz \
+    && wget -O /tmp/s6-overlay-arch.tar.xz https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz \
+    && tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
+    && tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz \
+    && rm /tmp/s6-overlay-*.tar.xz \
+    && mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d
 
-# Install OpenResty with multi-architecture support
-RUN wget -O - https://openresty.org/package/pubkey.gpg | apt-key add - \
+# Install OpenSSH Server + s6 service config
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-server \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && mkdir -p /etc/s6-overlay/s6-rc.d/sshd \
+    && echo "longrun" > /etc/s6-overlay/s6-rc.d/sshd/type \
+    && printf '#!/command/execlineb -P\n/usr/sbin/sshd -D -e' > /etc/s6-overlay/s6-rc.d/sshd/run \
+    && chmod +x /etc/s6-overlay/s6-rc.d/sshd/run \
+    && touch /etc/s6-overlay/s6-rc.d/user/contents.d/sshd
+
+# Install cron + s6 service config
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cron \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /etc/s6-overlay/s6-rc.d/cron \
+    && echo "longrun" > /etc/s6-overlay/s6-rc.d/cron/type \
+    && printf '#!/command/execlineb -P\n/usr/sbin/cron -f' > /etc/s6-overlay/s6-rc.d/cron/run \
+    && chmod +x /etc/s6-overlay/s6-rc.d/cron/run \
+    && touch /etc/s6-overlay/s6-rc.d/user/contents.d/cron
+
+# Install OpenResty + s6 service config
+RUN case "${TARGETARCH}" in \
+        amd64) REPO_PATH="debian" ;; \
+        arm64) REPO_PATH="arm64/debian" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    esac \
+    && wget -O - https://openresty.org/package/pubkey.gpg | apt-key add - \
     && codename=$(grep -Po 'VERSION="[0-9]+ \(\K[^)]+' /etc/os-release) \
-    && arch=$(uname -m) \
-    && if [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ]; then \
-         echo "deb ${OPENRESTY_REPO_BASE}/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
-       elif [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
-         echo "deb ${OPENRESTY_REPO_BASE}/arm64/debian $codename openresty" | tee /etc/apt/sources.list.d/openresty.list; \
-       else \
-         echo "Unsupported architecture: $arch"; \
-         exit 1; \
-       fi \
+    && echo "deb http://openresty.org/package/${REPO_PATH} ${codename} openresty" | tee /etc/apt/sources.list.d/openresty.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends openresty \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && echo '[program:openresty]\ncommand=/usr/bin/openresty -g "daemon off;"' >> /etc/supervisor/conf.d/openresty.conf
+    && mkdir -p /etc/s6-overlay/s6-rc.d/openresty \
+    && echo "longrun" > /etc/s6-overlay/s6-rc.d/openresty/type \
+    && printf '#!/command/execlineb -P\n/usr/bin/openresty -g "daemon off;"' > /etc/s6-overlay/s6-rc.d/openresty/run \
+    && chmod +x /etc/s6-overlay/s6-rc.d/openresty/run \
+    && touch /etc/s6-overlay/s6-rc.d/user/contents.d/openresty
 
 # Install Node.js
 RUN curl -sL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
@@ -68,15 +98,15 @@ RUN curl -sL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Yarn
-RUN set -ex \
-  && curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/yarn-keyring.gpg \
-  && echo "deb [signed-by=/usr/share/keyrings/yarn-keyring.gpg] https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
-  && apt-get update \
-  && apt-get install --no-install-recommends -y yarn \
-  && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/yarn-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/yarn-keyring.gpg] https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends yarn \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 
 EXPOSE 22 80
 
-CMD ["sh", "-c", "env >> /etc/environment ; /usr/bin/supervisord"]
+CMD ["/init"]
