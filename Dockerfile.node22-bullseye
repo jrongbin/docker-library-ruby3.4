@@ -48,6 +48,9 @@ RUN case "${TARGETARCH}" in \
     && rm /tmp/s6-overlay-*.tar.xz \
     && mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d
 
+# Update PATH for s6-overlay
+ENV PATH="/command:${PATH}"
+
 # Install OpenSSH Server + s6 service config
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-server \
