@@ -90,7 +90,7 @@ RUN case "${TARGETARCH}" in \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /etc/s6-overlay/s6-rc.d/openresty \
     && echo "longrun" > /etc/s6-overlay/s6-rc.d/openresty/type \
-    && printf '#!/command/execlineb -P\n/usr/bin/openresty -g "daemon off;"' > /etc/s6-overlay/s6-rc.d/openresty/run \
+    && printf '#!/command/execlineb -P\n/command/s6-envdir /var/run/s6/container_environment\n/usr/bin/openresty -g "daemon off;"' > /etc/s6-overlay/s6-rc.d/openresty/run \
     && chmod +x /etc/s6-overlay/s6-rc.d/openresty/run \
     && touch /etc/s6-overlay/s6-rc.d/user/contents.d/openresty
 
