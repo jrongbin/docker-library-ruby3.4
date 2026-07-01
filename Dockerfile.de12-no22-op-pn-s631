@@ -50,10 +50,12 @@ RUN set -ex \
         arm64) REPO_PATH="arm64/debian" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac \
-    && wget -O /usr/share/keyrings/openresty-keyring.gpg \
+    && wget -O /tmp/openresty-pubkey.gpg \
         https://openresty.org/package/pubkey.gpg \
+    && gpg --dearmor -o /usr/share/keyrings/openresty.gpg /tmp/openresty-pubkey.gpg \
+    && rm /tmp/openresty-pubkey.gpg \
     && codename=$(grep -Po 'VERSION="[0-9]+ \(\K[^)]+' /etc/os-release) \
-    && echo "deb [signed-by=/usr/share/keyrings/openresty-keyring.gpg] http://openresty.org/package/${REPO_PATH} ${codename} openresty" \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openresty.gpg] https://openresty.org/package/${REPO_PATH} ${codename} openresty" \
         | tee /etc/apt/sources.list.d/openresty.list \
     && curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get install -y --no-install-recommends openresty nodejs \
