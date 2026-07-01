@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+/command/s6-envdir /var/run/s6/container_environment
+/usr/bin/openresty -g "daemon off;"
