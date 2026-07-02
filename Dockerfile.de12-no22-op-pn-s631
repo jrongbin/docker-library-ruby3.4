@@ -81,8 +81,8 @@ RUN set -ex \
         "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" \
     && wget -O /tmp/s6-overlay-arch.tar.xz.sha256 \
         "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz.sha256" \
-    && echo "$(cat /tmp/s6-overlay-noarch.tar.xz.sha256)  /tmp/s6-overlay-noarch.tar.xz" | sha256sum -c - \
-    && echo "$(cat /tmp/s6-overlay-arch.tar.xz.sha256)  /tmp/s6-overlay-arch.tar.xz" | sha256sum -c - \
+    && echo "$(cut -d ' ' -f1 /tmp/s6-overlay-noarch.tar.xz.sha256)  /tmp/s6-overlay-noarch.tar.xz" | sha256sum -c - \
+    && echo "$(cut -d ' ' -f1 /tmp/s6-overlay-arch.tar.xz.sha256)  /tmp/s6-overlay-arch.tar.xz" | sha256sum -c - \
     && tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
     && tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz \
     && rm /tmp/s6-overlay-*.tar.xz /tmp/s6-overlay-*.tar.xz.sha256 \
